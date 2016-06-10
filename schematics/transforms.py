@@ -68,6 +68,9 @@ def import_loop(cls, instance_or_dict, field_converter=None, trusted_data=None,
     if got_data and not isinstance(instance_or_dict, (cls, dict)):
         raise ConversionError('Model conversion requires a model or dict')
 
+    if trusted_data is not None and not isinstance(trusted_data, dict):
+        trusted_data = trusted_data.to_native()
+
     context = Context._make(context)
     try:
         context.initialized
