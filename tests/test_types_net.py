@@ -17,6 +17,9 @@ def test_ipv4_type():
     with pytest.raises(ValidationError):
         IPv4Type().validate('255.255.255.2555')
 
+    mock = IPv4Type(required=True).mock()
+    assert IPv4Type().validate(mock)
+
 
 def test_ipv6_type():
     field = IPv6Type()
@@ -41,11 +44,49 @@ def test_ipv6_type():
         with pytest.raises(ValidationError):
             field.validate(addr)
 
+    mock = IPv6Type(required=True).mock()
+    assert IPv6Type().validate(mock)
+
 
 def test_ip_type():
     assert IPAddressType().validate('255.255.255.255')
     assert IPAddressType().validate('fe80::223:6caf:fe76:c12d')
 
+    mock = IPAddressType(required=True).mock()
+    assert IPAddressType().validate(mock)
+
+
+def test_mac_type():
+    addrs = [
+        '00-00-00-00-00-00',
+        '03:0F:25:B7:10:1E',
+        '030F25B7104E',
+        '030F25:B7104E',
+        '030F25-B7104E',
+        '030F.25B7.104E',
+    ]
+    for addr in addrs:
+        assert MACAddressType().validate(addr)
+
+    addrs = [
+        '00-00-00-00-00',
+        '00:00-00-00-00-00',
+        '00:00-00-00-00-00',
+        '030F25B7104',
+        '030F25B7104Z',
+        '30F25:B7104E',
+        '030F2-B7104E',
+        '030F:25B7.104E',
+    ]
+    for addr in addrs:
+        with pytest.raises(ValidationError):
+            MACAddressType().validate(addr)
+
+    mock = MACAddressType(required=True).mock()
+    assert MACAddressType().validate(mock)
+
+    s = MACAddressType().to_primitive(value='00-00-00-00-00-00')
+    assert MACAddressType().validate(s)
 
 def test_url_type_with_valid_urls():
 

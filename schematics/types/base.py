@@ -2,6 +2,11 @@
 
 from __future__ import unicode_literals, absolute_import
 
+try:
+    import typing
+except ImportError:
+    pass
+
 import copy
 import datetime
 import decimal
@@ -11,10 +16,12 @@ import random
 import re
 import string
 import uuid
+from collections import Iterable, OrderedDict
 
 from ..common import * # pylint: disable=redefined-builtin
-from ..datastructures import OrderedDict
+from ..compat import string_type
 from ..exceptions import *
+from ..translator import _
 from ..undefined import Undefined
 from ..util import listify
 from ..validate import prepare_validator, get_validation_context
@@ -131,7 +138,7 @@ class BaseType(object):
         converted into a rich python type. Default: []
     :param serialize_when_none:
         Dictates if the field should appear in the serialized data even if the
-        value is None. Default: True
+        value is None. Default: None.
     :param messages:
         Override the error messages with a dict. You can also do this by
         subclassing the Type and defining a `MESSAGES` dict attribute on the
@@ -139,20 +146,20 @@ class BaseType(object):
         resulting dict with instance level `messages` and assign to
         `self.messages`.
     :param metadata:
-        Dictionary for storing custom metadata associated with the field.  
-        To encourage compatibility with external tools, we suggest these keys 
+        Dictionary for storing custom metadata associated with the field.
+        To encourage compatibility with external tools, we suggest these keys
         for common metadata:
         - *label* : Brief human-readable label
-        - *description* : Explanation of the purpose of the field. Used for 
+        - *description* : Explanation of the purpose of the field. Used for
           help, tooltips, documentation, etc.
     """
 
     primitive_type = None
-    native_type = None 
+    native_type = None
 
     MESSAGES = {
-        'required': "This field is required.",
-        'choices': "Value must be one of {0}.",
+        'required': _("This field is required."),
+        'choices': _("Value must be one of {0}."),
     }
 
     EXPORT_METHODS = {
@@ -169,7 +176,7 @@ class BaseType(object):
         self.required = required
         self._default = default
         self.serialized_name = serialized_name
-        if choices and not (callable(choices) or isinstance(choices, (list, tuple))):
+        if choices and not callable(choices) and (isinstance(choices, string_type) or not isinstance(choices, Iterable)):
             raise TypeError('"choices" must be a callabe, list, or tuple')
         self._choices = choices
         self.deserialize_from = listify(deserialize_from)
@@ -349,8 +356,13 @@ class UUIDType(BaseType):
     native_type = uuid.UUID
 
     MESSAGES = {
-        'convert': "Couldn't interpret '{0}' value as UUID.",
+        'convert': _("Couldn't interpret '{0}' value as UUID."),
     }
+
+
+    def __init__(self, **kwargs):
+        # type: (...) -> uuid.UUID
+        super(UUIDType, self).__init__(**kwargs)
 
     def _mock(self, context=None):
         return uuid.uuid4()
@@ -376,14 +388,16 @@ class StringType(BaseType):
     allow_casts = (int, bytes)
 
     MESSAGES = {
-        'convert': "Couldn't interpret '{0}' as string.",
-        'decode': "Invalid UTF-8 data.",
-        'max_length': "String value is too long.",
-        'min_length': "String value is too short.",
-        'regex': "String value did not match validation regex.",
+        'convert': _("Couldn't interpret '{0}' as string."),
+        'decode': _("Invalid UTF-8 data."),
+        'max_length': _("String value is too long."),
+        'min_length': _("String value is too short."),
+        'regex': _("String value did not match validation regex."),
     }
 
     def __init__(self, regex=None, max_length=None, min_length=None, **kwargs):
+        # type: (...) -> typing.Text
+
         self.regex = re.compile(regex) if regex else None
         self.max_length = max_length
         self.min_length = min_length
@@ -423,19 +437,22 @@ class StringType(BaseType):
 
 class NumberType(BaseType):
 
-    """A number field.
+    """A generic number field.
+    Converts to and validates against `number_type` parameter.
     """
 
     primitive_type = None
     native_type = None
     number_type = None
     MESSAGES = {
-        'number_coerce': "Value '{0}' is not {1}.",
-        'number_min': "{0} value should be greater than or equal to {1}.",
-        'number_max': "{0} value should be less than or equal to {1}.",
+        'number_coerce': _("Value '{0}' is not {1}."),
+        'number_min': _("{0} value should be greater than or equal to {1}."),
+        'number_max': _("{0} value should be less than or equal to {1}."),
     }
 
     def __init__(self, min_value=None, max_value=None, strict=False, **kwargs):
+        # type: (...) -> typing.Union[int, float]
+
         self.min_value = min_value
         self.max_value = max_value
         self.strict = strict
@@ -486,6 +503,10 @@ class IntType(NumberType):
     native_type = int
     number_type = 'Int'
 
+    def __init__(self, **kwargs):
+        # type: (...) -> int
+        super(IntType, self).__init__(**kwargs)
+
 
 LongType = IntType
 
@@ -499,6 +520,10 @@ class FloatType(NumberType):
     native_type = float
     number_type = 'Float'
 
+    def __init__(self, **kwargs):
+        # type: (...) -> float
+        super(FloatType, self).__init__(**kwargs)
+
 
 class DecimalType(BaseType):
 
@@ -509,14 +534,15 @@ class DecimalType(BaseType):
     native_type = decimal.Decimal
 
     MESSAGES = {
-        'number_coerce': "Number '{0}' failed to convert to a decimal.",
-        'number_min': "Value should be greater than or equal to {0}.",
-        'number_max': "Value should be less than or equal to {0}.",
+        'number_coerce': _("Number '{0}' failed to convert to a decimal."),
+        'number_min': _("Value should be greater than or equal to {0}."),
+        'number_max': _("Value should be less than or equal to {0}."),
     }
 
     def __init__(self, min_value=None, max_value=None, **kwargs):
-        self.min_value, self.max_value = min_value, max_value
+        # type: (...) -> decimal.Decimal
 
+        self.min_value, self.max_value = min_value, max_value
         super(DecimalType, self).__init__(**kwargs)
 
     def _mock(self, context=None):
@@ -551,8 +577,8 @@ class DecimalType(BaseType):
 class HashType(StringType):
 
     MESSAGES = {
-        'hash_length': "Hash value is wrong length.",
-        'hash_hex': "Hash value is not hexadecimal.",
+        'hash_length': _("Hash value is wrong length."),
+        'hash_hex': _("Hash value is not hexadecimal."),
     }
 
     def _mock(self, context=None):
@@ -602,6 +628,10 @@ class BooleanType(BaseType):
     TRUE_VALUES = ('True', 'true', '1')
     FALSE_VALUES = ('False', 'false', '0')
 
+    def __init__(self, **kwargs):
+        # type: (...) -> bool
+        super(BooleanType, self).__init__(**kwargs)
+
     def _mock(self, context=None):
         return random.choice([True, False])
 
@@ -616,7 +646,7 @@ class BooleanType(BaseType):
             value = bool(value)
 
         if not isinstance(value, bool):
-            raise ConversionError("Must be either true or false.")
+            raise ConversionError(_("Must be either true or false."))
 
         return value
 
@@ -631,11 +661,12 @@ class DateType(BaseType):
 
     SERIALIZED_FORMAT = '%Y-%m-%d'
     MESSAGES = {
-        'parse': "Could not parse {0}. Should be ISO 8601 (YYYY-MM-DD).",
-        'parse_formats': 'Could not parse {0}. Valid formats: {1}',
+        'parse': _("Could not parse {0}. Should be ISO 8601 (YYYY-MM-DD)."),
+        'parse_formats': _('Could not parse {0}. Valid formats: {1}'),
     }
 
     def __init__(self, formats=None, **kwargs):
+        # type: (...) -> datetime.date
 
         if formats:
             self.formats = listify(formats)
@@ -656,6 +687,8 @@ class DateType(BaseType):
         )
 
     def to_native(self, value, context=None):
+        if isinstance(value, datetime.datetime):
+            return value.date()
         if isinstance(value, datetime.date):
             return value
 
@@ -724,17 +757,17 @@ class DateTimeType(BaseType):
     SERIALIZED_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
 
     MESSAGES = {
-        'parse': 'Could not parse {0}. Should be ISO 8601 or timestamp.',
-        'parse_formats': 'Could not parse {0}. Valid formats: {1}',
-        'parse_external': 'Could not parse {0}.',
-        'parse_tzd_require': 'Could not parse {0}. Time zone offset required.',
-        'parse_tzd_reject': 'Could not parse {0}. Time zone offset not allowed.',
-        'tzd_require': 'Could not convert {0}. Time zone required but not found.',
-        'tzd_reject': 'Could not convert {0}. Time zone offsets not allowed.',
-        'validate_tzd_require': 'Time zone information required but not found.',
-        'validate_tzd_reject': 'Time zone information not allowed.',
-        'validate_utc_none': 'Time zone must be UTC but was None.',
-        'validate_utc_wrong': 'Time zone must be UTC.',
+        'parse': _('Could not parse {0}. Should be ISO 8601 or timestamp.'),
+        'parse_formats': _('Could not parse {0}. Valid formats: {1}'),
+        'parse_external': _('Could not parse {0}.'),
+        'parse_tzd_require': _('Could not parse {0}. Time zone offset required.'),
+        'parse_tzd_reject': _('Could not parse {0}. Time zone offset not allowed.'),
+        'tzd_require': _('Could not convert {0}. Time zone required but not found.'),
+        'tzd_reject': _('Could not convert {0}. Time zone offsets not allowed.'),
+        'validate_tzd_require': _('Time zone information required but not found.'),
+        'validate_tzd_reject': _('Time zone information not allowed.'),
+        'validate_utc_none': _('Time zone must be UTC but was None.'),
+        'validate_utc_wrong': _('Time zone must be UTC.'),
     }
 
     REGEX = re.compile(r"""
@@ -774,6 +807,7 @@ class DateTimeType(BaseType):
 
     def __init__(self, formats=None, serialized_format=None, parser=None,
                  tzd='allow', convert_tz=False, drop_tzinfo=False, **kwargs):
+        # type: (...) -> datetime.datetime
 
         if tzd not in ('require', 'allow', 'utc', 'reject'):
             raise ValueError("DateTimeType.__init__() got an invalid value for parameter 'tzd'")
@@ -846,6 +880,8 @@ class DateTimeType(BaseType):
                 value = float(value)
             except ValueError:
                 dt = self.from_string(value)
+            except TypeError:
+                raise ConversionError(self.messages['parse'].format(value))
             else:
                 dt = self.from_timestamp(value)
             if not dt:
@@ -930,6 +966,7 @@ class UTCDateTimeType(DateTimeType):
     SERIALIZED_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
     def __init__(self, formats=None, parser=None, tzd='utc', convert_tz=True, drop_tzinfo=True, **kwargs):
+        # type: (...) -> datetime.datetime
         super(UTCDateTimeType, self).__init__(formats=formats, parser=parser, tzd=tzd,
                                               convert_tz=convert_tz, drop_tzinfo=drop_tzinfo, **kwargs)
 
@@ -944,6 +981,7 @@ class TimestampType(DateTimeType):
     primitive_type = float
 
     def __init__(self, formats=None, parser=None, drop_tzinfo=False, **kwargs):
+        # type: (...) -> datetime.datetime
         super(TimestampType, self).__init__(formats=formats, parser=parser, tzd='require',
                                             convert_tz=True, drop_tzinfo=drop_tzinfo, **kwargs)
 
@@ -966,8 +1004,8 @@ class GeoPointType(BaseType):
     native_type = list
 
     MESSAGES = {
-        'point_min': "{0} value {1} should be greater than or equal to {2}.",
-        'point_max': "{0} value {1} should be less than or equal to {2}."
+        'point_min': _("{0} value {1} should be greater than or equal to {2}."),
+        'point_max': _("{0} value {1} should be less than or equal to {2}."),
     }
 
     def _mock(self, context=None):
@@ -985,12 +1023,12 @@ class GeoPointType(BaseType):
         """Make sure that a geo-value is of type (x, y)
         """
         if not isinstance(value, (tuple, list, dict)):
-            raise ConversionError('GeoPointType can only accept tuples, lists, or dicts')
+            raise ConversionError(_('GeoPointType can only accept tuples, lists, or dicts'))
         elements = self._normalize(value)
         if not len(elements) == 2:
-            raise ConversionError('Value must be a two-dimensional point')
+            raise ConversionError(_('Value must be a two-dimensional point'))
         if not all(isinstance(v, (float, int)) for v in elements):
-            raise ConversionError('Both values in point must be float or int')
+            raise ConversionError(_('Both values in point must be float or int'))
         return value
 
     def validate_range(self, value, context=None):
@@ -1031,13 +1069,13 @@ class MultilingualStringType(BaseType):
     allow_casts = (int, bytes)
 
     MESSAGES = {
-        'convert': "Couldn't interpret value as string.",
-        'max_length': "String value in locale {0} is too long.",
-        'min_length': "String value in locale {0} is too short.",
-        'locale_not_found': "No requested locale was available.",
-        'no_locale': "No default or explicit locales were given.",
-        'regex_locale': "Name of locale {0} did not match validation regex.",
-        'regex_localized': "String value in locale {0} did not match validation regex.",
+        'convert': _("Couldn't interpret value as string."),
+        'max_length': _("String value in locale {0} is too long."),
+        'min_length': _("String value in locale {0} is too short."),
+        'locale_not_found': _("No requested locale was available."),
+        'no_locale': _("No default or explicit locales were given."),
+        'regex_locale': _("Name of locale {0} did not match validation regex."),
+        'regex_localized': _("String value in locale {0} did not match validation regex."),
     }
 
     LOCALE_REGEX = r'^[a-z]{2}(:?_[A-Z]{2})?$'
@@ -1059,7 +1097,7 @@ class MultilingualStringType(BaseType):
         """Make sure a MultilingualStringType value is a dict or None."""
 
         if not (value is None or isinstance(value, dict)):
-            raise ConversionError('Value must be a dict or None')
+            raise ConversionError(_('Value must be a dict or None'))
 
         return value
 

@@ -1,8 +1,9 @@
 import inspect
+from collections import OrderedDict
 
 from ..common import *
-from ..datastructures import OrderedDict
 from ..exceptions import ConversionError
+from ..translator import _
 from ..transforms import get_import_context, get_export_context
 from .base import BaseType
 
@@ -24,7 +25,7 @@ class UnionType(BaseType):
     types = None
 
     MESSAGES = {
-        'convert': "Couldn't interpret value '{0}' as any of {1}.",
+        'convert': _("Couldn't interpret value '{0}' as any of {1}."),
     }
 
     _baseclass_args = _valid_init_args(BaseType)

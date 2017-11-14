@@ -164,6 +164,29 @@ def test_export_loop_with_subclassed_model():
     assert 'bucket_name' in native['asset']
 
 
+def test_conversion_error_recursive_overhead():
+    conversions = [0]
+
+    class Leaf(Model):
+        pass
+    next_model = Leaf
+    data = 'not a mapping'
+
+    for i in range(20):
+        class Recursive(Model):
+            x = ModelType(next_model, required=True)
+
+            def __init__(self, *args, **kwargs):
+                super(type(self), self).__init__(*args, **kwargs)
+                conversions[0] += 1
+                assert conversions[0] < 25
+        next_model = Recursive
+        data = {'x': data}
+
+    with pytest.raises(DataError):
+        next_model(data)
+
+
 def test_mock_object():
     class User(Model):
         name = StringType(required=True)

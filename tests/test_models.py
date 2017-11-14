@@ -10,6 +10,50 @@ from schematics.types import StringType, IntType, ListType, ModelType
 from schematics.exceptions import *
 
 
+def test_dict_methods_in_model():
+    """
+    a regression test to ensure that an issue where attributes on
+    dictionaries are not being misintrepreted as actual schematics
+    fields.
+    """
+
+    class M(Model):
+        items, values, get, keys = IntType(), IntType(), IntType(), IntType()
+
+    m = M({"items": 1, "values": 1, "get": 1, "keys": 1})
+    m.validate()
+
+
+def test_dict_methods_in_model_atoms():
+    """
+    atoms should return the raw values, and not call any overriden methods.
+    """
+    class M(Model):
+        get = IntType()
+    m = M({"get": 1})
+    atom = list(m.atoms())[0]
+    assert atom.name == "get"
+    assert atom.value == 1
+
+
+def test_nested_model_override_mapping_methods():
+    """
+    overriding mapping methods on child models should not cause issues
+    with validation on the parent.
+    """
+
+    class Nested(Model):
+        items, values, get, keys = IntType(), IntType(), IntType(), IntType()
+
+    class Root(Model):
+        keys = ModelType(Nested)
+
+    root = Root({"keys": {"items": 1, "values": 1, "get": 1, "keys": 1}})
+    root.validate()
+    for key in ["items", "values", "get", "keys"]:
+        assert getattr(root.keys, key) == 1
+
+
 def test_init_with_dict():
 
     class M(Model):
@@ -184,6 +228,7 @@ def test_validation_uses_internal_state():
 
 def test_validation_fails_if_internal_state_is_invalid():
     class User(Model):
+        status = StringType()
         name = StringType(required=True)
         age = IntType(required=True)
 
@@ -196,8 +241,9 @@ def test_validation_fails_if_internal_state_is_invalid():
         "age": ["This field is required."],
     }
 
-    assert u.name is None
-    assert u.age is None
+    assert u.status is None
+    with pytest.raises(UndefinedValueError):
+        u.name == u.age
 
 
 def test_returns_nice_conversion_errors():
@@ -300,7 +346,7 @@ def test_explicit_values_override_defaults():
 
 
 def test_good_options_args():
-    mo = ModelOptions(klass=None, roles=None)
+    mo = ModelOptions(roles=None)
     assert mo is not None
 
     assert mo.roles == {}
@@ -308,7 +354,6 @@ def test_good_options_args():
 
 def test_bad_options_args():
     args = {
-        'klass': None,
         'roles': None,
         'badkw': None,
     }
@@ -319,7 +364,7 @@ def test_bad_options_args():
 
 def test_no_options_args():
     args = {}
-    mo = ModelOptions(None, **args)
+    mo = ModelOptions(**args)
     assert mo is not None
 
 
@@ -341,10 +386,10 @@ def test_options_parsing_from_model():
 def test_options_parsing_from_optionsclass():
     class FooOptions(ModelOptions):
 
-        def __init__(self, klass, **kwargs):
+        def __init__(self, **kwargs):
             kwargs['namespace'] = kwargs.get('namespace') or 'foo'
             kwargs['roles'] = kwargs.get('roles') or {}
-            super(FooOptions, self).__init__(klass, **kwargs)
+            super(FooOptions, self).__init__(**kwargs)
 
     class Foo(Model):
         __optionsclass__ = FooOptions

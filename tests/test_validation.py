@@ -8,6 +8,7 @@ from schematics.exceptions import (
     ConversionError, ValidationError, StopValidationError, DataError)
 from schematics.types import StringType, DateTimeType, BooleanType, IntType
 from schematics.types.compound import ModelType, ListType, DictType
+from schematics.types.serializable import serializable
 from schematics.validate import prepare_validator
 
 
@@ -341,6 +342,32 @@ def test_deep_errors_with_lists(idx1, idx2):
         }
     }
 
+def test_merge_serializable_errors():
+    now = datetime.datetime(2012, 1, 1, 0, 0)
+
+    class Person(Model):
+        name = StringType(required=True)
+        birthday = DateTimeType()
+
+        @serializable
+        def age(self):
+            return (now - self.birthday).days / 365
+
+        @age.setter
+        def age(self, value):
+            if value < 0:
+                raise ValidationError(u'Negative age is not valid')
+            self.birthday = now - datetime.timedelta(value * 365)
+
+    person = Person({"age": -1})
+    with pytest.raises(DataError) as exception:
+        person.validate()
+
+    messages = exception.value.messages
+
+    assert "age" in messages
+    assert "name" in messages
+
 
 def test_deep_errors_with_dicts():
     class Person(Model):
@@ -392,6 +419,51 @@ def test_deep_errors_with_dicts():
                 }
             }
         }
+    }
+
+
+def test_custom_validator_raising_dicterror():
+    class Foo(Model):
+        bar = DictType(IntType(required=True), required=True)
+        eggs = IntType(required=True, min_value=10)
+
+        @classmethod
+        def validate_bar(cls, data, value):
+            errors = {}
+
+            if 'a' not in value:
+                errors['a'] = ValidationError('Key a must be set.')
+            if 'b' not in value:
+                errors['b'] = ValidationError('Key b must be set.')
+
+            if errors:
+                raise DataError(errors)
+
+    valid_data = {
+        'bar': {
+            'a': 1,
+            'b': 1,
+        },
+        'eggs': 10
+    }
+    foo = Foo(valid_data)
+    foo.validate()
+
+    invalid_data = foo.serialize()
+    del invalid_data['bar']['a']
+    invalid_data['eggs'] = 1
+
+    foo = Foo(invalid_data)
+    with pytest.raises(DataError) as exception:
+        foo.validate()
+
+    messages = exception.value.messages
+
+    assert messages == {
+        'bar': {
+            'a': [u'Key a must be set.']
+        },
+        'eggs': [u'Int value should be greater than or equal to 10.']
     }
 
 
@@ -490,3 +562,24 @@ def test_builtin_validation_exception():
     with pytest.raises(ValueError):
         raise ValidationError('message')
 
+
+def test_lazy_conversion_exception():
+
+    class Foo(Model):
+        bar = BooleanType()
+
+    foo = Foo(dict(bar='a'), lazy=True)
+    with pytest.raises(DataError):
+        foo.validate()
+
+
+def test_lazy_conversion_and_validation_exception_bundling():
+
+    class Signup(Model):
+        name = StringType(max_length=3)
+        call_me = BooleanType()
+
+    user = Signup({'name': u'Arthur', 'call_me': 'Dent'}, lazy=True)
+    with pytest.raises(DataError) as exception:
+        user.validate()
+    assert set(('name', 'call_me')).issubset(exception.value.errors)

@@ -17,6 +17,7 @@ except ImportError: # PY2
 
 from ..common import * # pylint: disable=redefined-builtin
 from ..exceptions import ValidationError, StopValidationError
+from ..translator import _
 
 from .base import StringType, fill_template
 
@@ -49,6 +50,7 @@ IPV6 = r"""(
 
 
 class IPAddressType(StringType):
+    """A field that stores a valid IPv4 or IPv6 address."""
 
     VERSION = None
     REGEX = re.compile('^%s|%s$' % (IPV4, IPV6), re.I + re.X)
@@ -59,7 +61,10 @@ class IPAddressType(StringType):
 
     def validate_(self, value, context=None):
         if not self.valid_ip(value):
-            raise ValidationError('Invalid IP%s address' % (self.VERSION or ''))
+            raise ValidationError(_('Invalid IP%s address') % (self.VERSION or ''))
+
+    def _mock(self, context=None):
+        return random.choice([IPv4Type, IPv6Type])(required=self.required).mock()
 
 
 class IPv4Type(IPAddressType):
@@ -76,10 +81,39 @@ class IPv6Type(IPAddressType):
     """A field that stores a valid IPv6 address."""
 
     VERSION = 'v6'
-    REGEX = re.compile('^%s$' % IPV6, re.I + re.X)
+    REGEX = re.compile(r'^%s$' % IPV6, re.I + re.X)
 
     def _mock(self, context=None):
-        return '.'.join(str(random.randrange(256)) for _ in range(4))
+        return '2001:db8:' + ':'.join(
+            '%x' % (random.randrange(1 << 16)) for _ in range(6)
+        )
+
+
+### MAC address
+
+class MACAddressType(StringType):
+    """A field that stores a valid MAC address."""
+
+    REGEX = re.compile(r"""
+                         (
+                             ^([0-9a-f]{2}[-]){5}([0-9a-f]{2})$
+                            |^([0-9a-f]{2}[:]){5}([0-9a-f]{2})$
+                            |^([0-9a-f]{12})
+                            |^([0-9a-f]{6}[-:]([0-9a-f]{6}))$
+                            |^([0-9a-f]{4}(\.[0-9a-f]{4}){2})$
+                         )
+                         """, re.I + re.X)
+
+    def _mock(self, context=None):
+        return ':'.join('%02x' % (random.randrange(256)) for _ in range(6))
+
+    def validate_(self, value, context=None):
+        if not bool(self.REGEX.match(value)):
+            raise ValidationError(_('Invalid MAC address'))
+
+    def to_primitive(self, value, context=None):
+        value = value.replace(':', '').replace('.', '').replace('-', '')
+        return ':'.join(value[i:i+2] for i in range(0, len(value), 2))
 
 
 ### URI patterns
@@ -123,8 +157,12 @@ class URLType(StringType):
 
     """A field that validates the input as a URL.
 
-    If ``verify_exists=True``, the validation function will make sure
-    the URL is accessible (server responds with HTTP 2xx).
+    :param fqdn:
+        if ``True`` the validation function will ensure hostname in URL
+        is a Fully Qualified Domain Name.
+    :param verify_exists:
+        if ``True`` the validation function will make sure
+        the URL is accessible (server responds with HTTP 2xx).
     """
 
     MESSAGES = {
@@ -223,7 +261,7 @@ class EmailType(StringType):
     """
 
     MESSAGES = {
-        'email': "Not a well-formed email address."
+        'email': _("Not a well-formed email address.")
     }
 
     EMAIL_REGEX = re.compile(r"""^(

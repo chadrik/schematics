@@ -42,6 +42,11 @@ def test_type_repr():
     assert repr(DateTimeType()) == "<DateTimeType() instance>"
 
 
+@pytest.mark.parametrize('choice_type', [list, tuple, set, frozenset])
+def test_choices(choice_type):
+    assert BaseType(choices=choice_type('foo'))
+
+
 def test_string_choices():
     with pytest.raises(TypeError):
         BaseType(choices='foo')
@@ -60,6 +65,8 @@ def test_date():
     assert date_type.to_primitive(today) == "2013-03-01"
 
     assert date_type.to_native(today) is today
+
+    assert date_type.to_native(datetime.datetime(2013, 3, 1)) == today
 
     assert type(date_type._mock()) is datetime.date
 
